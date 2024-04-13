@@ -18,12 +18,12 @@ import javax.net.ssl.HttpsURLConnection;
 
 public class Main {
 
-    private static final String GOOGLE_API_KEY = "YOUR_API_KEY";
-    Translator translator;
+    private static final String GOOGLE_API_KEY = "AIzaSyD6ViW6gPSQhClKclXm9L19pYK7tupWo8E";
     // 장소를 찾는 메서드
     public List<Place> findPlace(String place, List<String> tagList) {
         // 태그를 쿼리로 변환
-        String query = String.join(", ", tagList) + ", " + place + "에 있는 관광지";
+        String query = String.join(", ", tagList) + " tourist attraction in " + place;
+        System.out.println(query);
         String translatedQuery = null;
         try {
             // 쿼리를 영어로 번역
@@ -42,6 +42,7 @@ public class Main {
 
         JSONObject data = new JSONObject();
         data.put("textQuery", translatedQuery);
+//        data.put("languageCode", "ko");
         // HTTP 요청 수행
         String response = null;
         try {
@@ -154,6 +155,13 @@ public class Main {
         public void setLanguageCode(String languageCode) {
             this.languageCode = languageCode;
         }
+
+        public JSONObject toJson() {
+            JSONObject nameJson = new JSONObject();
+            nameJson.put("text", text);
+            nameJson.put("languageCode", languageCode);
+            return nameJson;
+        }
     }
     public static class  locate {
         Double latitude;
@@ -180,6 +188,12 @@ public class Main {
                     "latitude=" + latitude +
                     ", longitude=" + longitude +
                     '}';
+        }
+        public JSONObject toJson() {
+            JSONObject locJson = new JSONObject();
+            locJson.put("latitude", latitude);
+            locJson.put("longitude", longitude);
+            return locJson;
         }
     }
     // Place 클래스 (필요에 따라 필드를 추가)
@@ -229,6 +243,15 @@ public class Main {
                     ", rating=" + rating +
                     ", displayName=" + displayName +
                     '}';
+        }
+
+        public JSONObject toJson() {
+            JSONObject placeJson = new JSONObject();
+            placeJson.put("id", this.id);
+            placeJson.put("location", this.location.toJson());  // locate가 toJson 메소드를 가지고 있다고 가정
+            placeJson.put("rating", this.rating);
+            placeJson.put("displayName", this.displayName.toJson());  // name이 toJson 메소드를 가지고 있다고 가정
+            return placeJson;
         }
     }
 
@@ -355,36 +378,135 @@ public class Main {
         }
         return route;
     }
+
+    public JSONObject findRestaurant(Place place1, Place place2) throws IOException {
+        double lat, lon;
+        if (place2 == null) {
+            lat = place1.getLocation().getLatitude();
+            lon = place1.getLocation().getLongitude();
+        } else {
+            lat = (place1.getLocation().getLatitude() + place2.getLocation().getLatitude()) / 2;
+            lon = (place1.getLocation().getLongitude() + place2.getLocation().getLongitude()) / 2;
+        }
+
+        String urlStr = "https://places.googleapis.com/v1/places:searchNearby";
+        JSONObject payload = new JSONObject();
+        payload.put("includedTypes", new JSONArray(Arrays.asList("restaurant")));
+        payload.put("maxResultCount", 10);
+        JSONObject locationRestriction = new JSONObject();
+        locationRestriction.put("circle", new JSONObject()
+                .put("center", new JSONObject()
+                        .put("latitude", lat)
+                        .put("longitude", lon))
+                .put("radius", 500.0));
+        payload.put("locationRestriction", locationRestriction);
+
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("X-Goog-Api-Key", GOOGLE_API_KEY);
+        conn.setRequestProperty("X-Goog-FieldMask", "places.id,places.rating,places.location,places.displayName");
+        conn.setDoOutput(true);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            byte[] input = payload.toString().getBytes("utf-8");
+            os.write(input, 0, input.length);
+        }
+
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "utf-8"))) {
+            StringBuilder response = new StringBuilder();
+            String responseLine;
+            while ((responseLine = br.readLine()) != null) {
+                response.append(responseLine.trim());
+            }
+
+            JSONObject responseJson = new JSONObject(response.toString());
+            JSONArray places = responseJson.getJSONArray("places");
+            // 최고 평점 레스토랑 찾기
+            if (places.length() > 0) {
+                return places.getJSONObject(0); // 최고 평점 레스토랑 반환
+            } else {
+                return null;
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public String autoMode(String place, List<String> tagList, int day) throws IOException {
+        List<Place> places = findPlace(place, tagList);
+        int[][] distanceMatrix = distanceMatrix(day, places);
+        int[][] mstMatrix = primAlgorithmFinal(distanceMatrix);
+        List<Integer> route = findRoute(mstMatrix);
+        System.out.println(route.size());
+        boolean err = false;
+        int resultDist = 0;
+        for (int i = 0; i < route.size() - 1; i++) {
+            if (distanceMatrix[route.get(i)][route.get(i + 1)] == 999999999) {
+                err = true;
+                break;
+            }
+            resultDist += distanceMatrix[route.get(i)][route.get(i + 1)];
+        }
+
+        if (!err) {
+            System.out.println(resultDist);
+        } else {
+            System.out.println("Error occurred");
+            return "";
+        }
+
+        List<JSONObject> orderedPlaces = new ArrayList<>();
+        for (int i = 0; i < day * 3; i++) {
+            int idx = i * 2;
+            JSONObject jsonPlace = places.get(route.get(i)).toJson();  // 관광지를 JSON 객체로 추가
+
+            if (idx % 3 == 0) { // 아침
+                JSONObject rest = findRestaurant(places.get(route.get(i)), places.get(route.get(i)));
+                orderedPlaces.add(rest);
+                orderedPlaces.add(jsonPlace);
+            } else if(idx % 3 == 2){ // 저녁
+                JSONObject rest = findRestaurant(places.get(route.get(i)), places.get(route.get(i)));
+                orderedPlaces.add(rest);
+                orderedPlaces.add(jsonPlace);
+            } else { // 점심
+                JSONObject rest = findRestaurant(places.get(route.get(i - 1)), places.get(route.get(i)));
+                orderedPlaces.add(jsonPlace);
+                orderedPlaces.add(rest);
+            }
+        }
+
+        JSONArray jsonPlaces = new JSONArray();
+        for (JSONObject placeObj : orderedPlaces) {
+            jsonPlaces.put(placeObj);
+        }
+        return jsonPlaces.toString(4);
+    }
+
+    public List<Place> manualMode(String place, List<String> tagList) {
+        return findPlace(place, tagList);
+    }
+
     // 메인 메서드
     public static void main(String[] args) {
         Main example = new Main();
         List<String> tags = new ArrayList<>();
         tags.add("조용한");
-        tags.add("저렴한");
-        List<Place> places = example.findPlace("서울", tags);
-        for (Place place : places) {
-            System.out.println(place.toString());
-        }
+        tags.add("분위기 좋은");
+
+        // 자동 모드 테스트
+        int day = 3; // 여행 일수 설정
+        String place = "서울"; // 여행 장소 설정
 
         try {
-            int durationInSeconds = getSpendTime("37.5728359,126.9746922", "37.5129907,127.1005382", "transit");
-            System.out.println("Estimated travel time: " + durationInSeconds + " seconds");
+            String result = example.autoMode(place, tags, day);
+            System.out.println("Auto Mode Result:");
+            System.out.println(result);
         } catch (IOException e) {
             e.printStackTrace();
-        }
-
-        int[][] distanceMatrix = example.distanceMatrix(3, places);
-
-        // 최소 신장 트리(MST) 생성
-        int[][] mstMatrix = example.primAlgorithmFinal(distanceMatrix);
-
-        // 경로 찾기
-        List<Integer> route = example.findRoute(mstMatrix);
-
-        // 경로 출력
-        System.out.println("Route:");
-        for (int idx : route) {
-            System.out.println(places.get(idx).toString());
+            System.out.println("An error occurred while running auto mode.");
         }
     }
 }
