@@ -18,7 +18,7 @@ import javax.net.ssl.HttpsURLConnection;
 
 public class Main {
 
-    private static final String GOOGLE_API_KEY = "API Key";
+    private static final String GOOGLE_API_KEY = "AIzaSyD6ViW6gPSQhClKclXm9L19pYK7tupWo8E";
     // 장소를 찾는 메서드
     public List<Place> findPlace(String place, List<String> tagList) {
         // 태그를 쿼리로 변환
@@ -42,11 +42,11 @@ public class Main {
 
         JSONObject data = new JSONObject();
         data.put("textQuery", translatedQuery);
-//        data.put("languageCode", "ko");
+        data.put("languageCode", "ko");
         // HTTP 요청 수행
         String response = null;
         try {
-            response = performHttpPostRequest("https://places.googleapis.com/v1/places:searchText", data.toString(), "API KEY");
+            response = performHttpPostRequest("https://places.googleapis.com/v1/places:searchText", data.toString(), "AIzaSyD6ViW6gPSQhClKclXm9L19pYK7tupWo8E");
         } catch (Exception e) {
             e.printStackTrace();
             return new ArrayList<>();
@@ -100,7 +100,7 @@ public class Main {
 
     // 텍스트를 번역하는 메서드
     private String translateText(String text) throws com.deepl.api.DeepLException, InterruptedException {
-        String authKey = "API Key";
+        String authKey = "e0e9745a-f486-47fc-b5d7-3d9280d628ba:fx";
         Translator translator = new Translator(authKey);
         TextResult result = null;
         try {
@@ -400,6 +400,7 @@ public class Main {
                         .put("longitude", lon))
                 .put("radius", 500.0));
         payload.put("locationRestriction", locationRestriction);
+        payload.put("languageCode", "ko");
 
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
